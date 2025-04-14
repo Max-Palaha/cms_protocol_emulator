@@ -1,0 +1,14 @@
+[project]
+name = "cms_protocol_server"
+version = "0.1.0"
+description = "Multi-protocol CMS server"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["utils", "protocols", "core", "scripts"]

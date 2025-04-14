@@ -1,0 +1,13 @@
+environment:
+  ports:
+    main: 9090
+    signalling: 2323
+    cms: 6969
+    sia_dcs: 4556
+    cms-sia-dcs: 4556  # Do not use
+    cms-masxml: 6667
+    cms-sbn: 6677
+    cms-manitou: 6777
+
+logging:
+  level: INFO  # Можливо: DEBUG, INFO, WARNING, ERROR, CRITICAL, TRACE
