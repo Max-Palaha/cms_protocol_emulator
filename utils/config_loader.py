@@ -23,8 +23,23 @@ def get_port(protocol_name) -> int:
 # For backward compatibility
 get_port_by_key = get_port
 
-def load_config() -> dict:
-    return CONFIG
+def load_config(force_reload: bool = False) -> dict:
+    global CONFIG, PORTS
+
+    if CONFIG is not None and not force_reload:
+        return CONFIG
+
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            CONFIG = yaml.safe_load(f)
+            PORTS = CONFIG.get("environment", {}).get("ports", {})
+            return CONFIG
+    except Exception as e:
+        logging.error(f"Failed to load config from {CONFIG_PATH}: {e}")
+        CONFIG = None
+        PORTS = {}
+        return None
+
 
 def get_logging_level() -> int:
     level_str = CONFIG.get("logging", {}).get("level", "INFO").upper()
