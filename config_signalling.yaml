@@ -8,6 +8,7 @@ environment:
     cms-masxml: 6667
     cms-sbn: 6677
     cms-manitou: 6777
+    dummy: 9999
 
 logging:
   level: INFO  # Можливо: DEBUG, INFO, WARNING, ERROR, CRITICAL, TRACE
