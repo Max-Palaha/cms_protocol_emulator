@@ -1,13 +1,33 @@
 from datetime import datetime
-
-def convert_sia_ack(sequence="0000", receiver="R0", line="L0", area="A0", account="acct") -> str:
-    return f'4AA90LLL"ACK"{sequence}{receiver}{line}{area}#{account}[]\r'
+from typing import Optional
 
 
-def convert_sia_nak(sequence="0000", receiver="R0", line="L0", area="A0", account="acct") -> str:
-    timestamp = datetime.now().strftime("_%H:%M:%S,%m-%d-%Y")
+def convert_sia_ack(
+    sequence: str = "0000",
+    receiver: str = "R0",
+    line: str = "L0",
+    area: str = "A0",
+    account: str = "acct",
+    timestamp: Optional[str] = None,
+) -> str:
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%H:%M:%S,%m-%d-%Y")
+    return f'4AA90LLL"ACK"{sequence}{receiver}{line}{area}#{account}[]_{timestamp}\r'
+
+
+def convert_sia_nak(
+    sequence: str = "0000",
+    receiver: str = "R0",
+    line: str = "L0",
+    area: str = "A0",
+    account: str = "acct",
+    timestamp: Optional[str] = None,
+) -> str:
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%H:%M:%S,%m-%d-%Y")
+
     crc = "4B89"
     lll = "007B"
     msg_id = "0001"
-    body = f'"NAK"{sequence}{receiver}{line}{area}#{account}[]{timestamp}'
+    body = f'"NAK"{sequence}{receiver}{line}{area}#{account}[]_{timestamp}'
     return f"{crc}{lll}{msg_id}{body}\r"

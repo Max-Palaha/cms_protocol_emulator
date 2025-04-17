@@ -13,7 +13,6 @@ class EmulationMode(Enum):
     ONLY_PING = "only-ping"
     DROP_N = "drop"
     DELAY_N = "delay"
-    TIME_CUSTOM = "time"
 
 
 class TimeModeDuration(Enum):
@@ -49,10 +48,6 @@ class ProtocolMode:
         logger.info(f"[MODE_MANAGER] Switched to mode: {mode.value}{count_info}{next_info}")
 
     def consume_packet(self) -> bool:
-        """
-        Called *after* a packet is handled.
-        Returns True if the mode has just changed (for logging order control).
-        """
         if self.mode_packet_count is not None:
             self.mode_packet_count -= 1
             if self.mode_packet_count <= 0:
@@ -79,14 +74,13 @@ class ProtocolMode:
         logger.info(f"[MODE_MANAGER] Delaying responses by {seconds} seconds")
 
     def set_time(self, new_time: datetime, duration: TimeModeDuration, count: int = 1):
-        self.set_mode(EmulationMode.TIME_CUSTOM)
         self.time_override = new_time
         self.time_mode_duration = duration
         self.time_left = count if duration == TimeModeDuration.TIMES else -1
         logger.info(f"[MODE_MANAGER] Setting custom timestamp {new_time} with duration {duration.value}")
 
     def get_response_timestamp(self) -> str:
-        if self.mode == EmulationMode.TIME_CUSTOM and self.time_override:
+        if self.time_override:
             timestamp = self.time_override.strftime("%H:%M:%S,%m-%d-%Y")
 
             if self.time_mode_duration == TimeModeDuration.ONCE:
@@ -121,5 +115,4 @@ class ModeManager:
         logger.info("[MODE_MANAGER] All modes have been reset")
 
 
-# Singleton
 mode_manager = ModeManager()

@@ -31,7 +31,7 @@ class MasxmlProtocol(BaseProtocol):
         client_port: int,
         raw_message: str,
     ):
-        mode = self.protocol_mode.mode  # capture mode before response
+        mode = self.protocol_mode.mode
 
         if mode == EmulationMode.NO_RESPONSE:
             logger.info(f"({self.receiver}) NO_RESPONSE mode: skipping reply")
@@ -47,7 +47,7 @@ class MasxmlProtocol(BaseProtocol):
                 logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
                 writer.write(nak.encode())
                 await writer.drain()
-            elif mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.TIME_CUSTOM]:
+            elif mode in [EmulationMode.ONLY_PING, EmulationMode.ACK]:
                 ack = convert_masxml_ack(raw_message)
                 logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
                 writer.write(ack.encode())

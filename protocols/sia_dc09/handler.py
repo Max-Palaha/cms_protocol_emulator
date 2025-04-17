@@ -28,14 +28,28 @@ class SIADC09Protocol(BaseProtocol):
             logger.info(f"({self.receiver}) NO_RESPONSE mode: skipping reply")
             return
 
+        timestamp = self.protocol_mode.get_response_timestamp()
+
         if is_ping(message):
-            if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.TIME_CUSTOM, EmulationMode.NAK]:
+            if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:
                 if current_mode == EmulationMode.NAK:
-                    nak = convert_sia_nak()
+                    nak = convert_sia_nak(
+                        sequence="0005",
+                        receiver="R0",
+                        line="L0",
+                        account="#000",
+                        timestamp=timestamp,
+                    )
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
                     writer.write(nak.encode())
                 else:
-                    ack = convert_sia_ack()
+                    ack = convert_sia_ack(
+                        sequence="0005",
+                        receiver="R0",
+                        line="L0",
+                        account="#000",
+                        timestamp=timestamp,
+                    )
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
                     writer.write(ack.encode())
                 await writer.drain()
@@ -63,14 +77,13 @@ class SIADC09Protocol(BaseProtocol):
         parsed = parse_sia_message(message)
 
         if current_mode == EmulationMode.NAK:
-            nak = convert_sia_nak(**parsed)
+            nak = convert_sia_nak(**parsed, timestamp=timestamp)
             logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
             writer.write(nak.encode())
         else:
-            parsed_time = self.protocol_mode.get_response_timestamp()
-            ack = convert_sia_ack(**parsed).replace("[]", f"[]{parsed_time}")
+            ack = convert_sia_ack(**parsed, timestamp=timestamp)
             logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
             writer.write(ack.encode())
 
         await writer.drain()
-        self.protocol_mode.consume_packet()  # Only after response!
+        self.protocol_mode.consume_packet()

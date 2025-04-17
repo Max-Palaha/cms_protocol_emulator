@@ -95,6 +95,6 @@ async def stdin_listener(protocol_key: str, mode_switcher=None):
                     "  only-ping               - respond only to pings, skip events\n"
                     "  drop N                  - drop next N packets\n"
                     "  delay N                 - delay each response by N seconds\n"
-                    "  time YYYY-MM-DD HH:MM:SS [once|N|forever] - override timestamp\n"
+                    "  time YYYY-MM-DD HH:MM:SS [once|N|forever] - override timestamp for all responses\n"
                     "  loglevel LEVEL          - change log level (DEBUG, INFO, TRACE...)\n"
                 )
