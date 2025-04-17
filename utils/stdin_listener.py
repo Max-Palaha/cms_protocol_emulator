@@ -6,13 +6,12 @@ from datetime import datetime
 from utils.mode_manager import EmulationMode, TimeModeDuration, mode_manager
 from utils.tools import logger
 
-
 VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "TRACE"]
 MODES_WITH_COUNT = ["ack", "nak", "no-response"]
 ALL_MODES = [m.value for m in EmulationMode]
 
 
-async def stdin_listener(protocol_key: str):
+async def stdin_listener(protocol_key: str, mode_switcher=None):
     logger.info(
         f"[STDIN] Type commands to control '{protocol_key}' emulation (e.g., 'ack', 'nak 3', 'drop 2', 'time 2024-08-26 14:46:14 5', 'loglevel DEBUG')"
     )
@@ -26,24 +25,40 @@ async def stdin_listener(protocol_key: str):
             continue
 
         parts = command.split()
-        protocol_mode = mode_manager.get(protocol_key)
         cmd = parts[0].lower()
 
-        # Handle dynamic modes with count and optional 'then'
+        # Allow changing log level globally
+        if cmd == "loglevel" and len(parts) == 2:
+            level = parts[1].upper()
+            if level in VALID_LOG_LEVELS:
+                logger.setLevel(getattr(logging, level))
+                logger.info(f"[STDIN] Log level changed to {level}")
+            else:
+                logger.warning(f"[STDIN] Invalid log level '{parts[1]}'. Valid: {', '.join(VALID_LOG_LEVELS)}")
+            continue
+
+        # If a custom mode switcher is provided (e.g., for MASXML), delegate logic
+        if mode_switcher:
+            mode_switcher.handle_command(command)
+            continue
+
+        # Fallback: default global handling via mode_manager
+        protocol_mode = mode_manager.get(protocol_key)
+
+        # Modes with count + optional `then`
         if cmd in MODES_WITH_COUNT:
             count = None
             next_mode = None
 
-            if len(parts) > 1:
-                if parts[1].isdigit():
-                    count = int(parts[1])
-                if len(parts) > 3 and parts[2].lower() == "then":
-                    next_raw = parts[3].lower()
-                    if next_raw in ALL_MODES:
-                        next_mode = EmulationMode(next_raw)
-                    else:
-                        logger.warning(f"[STDIN] Invalid next mode: {next_raw}")
-                        continue
+            if len(parts) > 1 and parts[1].isdigit():
+                count = int(parts[1])
+            if len(parts) > 3 and parts[2].lower() == "then":
+                next_raw = parts[3].lower()
+                if next_raw in ALL_MODES:
+                    next_mode = EmulationMode(next_raw)
+                else:
+                    logger.warning(f"[STDIN] Invalid next mode: {next_raw}")
+                    continue
 
             protocol_mode.set_mode(EmulationMode(cmd), count, next_mode)
             continue
@@ -60,7 +75,6 @@ async def stdin_listener(protocol_key: str):
                     new_time = datetime.strptime(f"{parts[1]} {parts[2]}", "%Y-%m-%d %H:%M:%S")
                     duration = TimeModeDuration.FOREVER
                     count = -1
-
                     if len(parts) == 4:
                         if parts[3].lower() == "once":
                             duration = TimeModeDuration.ONCE
@@ -68,17 +82,9 @@ async def stdin_listener(protocol_key: str):
                         elif parts[3].isdigit():
                             duration = TimeModeDuration.TIMES
                             count = int(parts[3])
-
                     protocol_mode.set_time(new_time, duration, count)
                 except Exception as e:
                     logger.warning(f"[STDIN] Invalid time command: {e}")
-            case "loglevel" if len(parts) == 2:
-                level = parts[1].upper()
-                if level in VALID_LOG_LEVELS:
-                    logger.setLevel(getattr(logging, level))
-                    logger.info(f"[STDIN] Log level changed to {level}")
-                else:
-                    logger.warning(f"[STDIN] Invalid log level '{parts[1]}'. Valid: {', '.join(VALID_LOG_LEVELS)}")
             case _:
                 logger.warning(f"[STDIN] Unknown command: {command}")
                 logger.info(
@@ -92,4 +98,3 @@ async def stdin_listener(protocol_key: str):
                     "  time YYYY-MM-DD HH:MM:SS [once|N|forever] - override timestamp\n"
                     "  loglevel LEVEL          - change log level (DEBUG, INFO, TRACE...)\n"
                 )
-
