@@ -13,12 +13,15 @@ def get_port(protocol_name) -> int:
     if hasattr(protocol_name, "value"):
         protocol_name = protocol_name.value
 
-    protocol_key = str(protocol_name).lower().replace("_", "-")
+    protocol_key = str(protocol_name).lower()
     port = PORTS.get(protocol_key)
 
     if port is None:
-        raise ValueError(f"Port for protocol '{protocol_key}' not found in config_signalling.yaml")
+        available = ", ".join(PORTS.keys())
+        raise ValueError(f"Port for protocol '{protocol_key}' not found in config_signalling.yaml. Available: {available}")
+
     return port
+
 
 # For backward compatibility
 get_port_by_key = get_port

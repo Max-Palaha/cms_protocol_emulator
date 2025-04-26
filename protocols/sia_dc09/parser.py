@@ -1,7 +1,13 @@
 import re
-from utils.tools import logger
+
+
+def is_ping(message: str) -> bool:
+    """Check if the message is a ping (NULL event)."""
+    return '"NULL"' in message or message.strip() == ''
+
 
 def parse_sia_message(message: str) -> dict:
+    """Parse SIA-DC09 formatted message into components."""
     result = {
         "sequence": "0000",
         "receiver": "R0",
@@ -10,26 +16,20 @@ def parse_sia_message(message: str) -> dict:
         "account": "acct",
     }
 
+    # Log raw message for debugging
+    from utils.tools import logger
+    logger.debug(f"[DIAG] Raw message: {message}")
+
     try:
-        match = re.search(r'"[A-Z\-]+"\s*(\d{4})L(\d)#(\w+)', message)
+        # Accept with or without space: '"BR"0000...' or '"BR" 0000...'
+        match = re.search(r'"[A-Z\-]+"(\s*)(\d{4})R(\d)L(\d)A(\d+)#(\w+)', message)
         if match:
-            result["sequence"] = match.group(1)
-            result["line"] = f"L{match.group(2)}"
-            result["account"] = match.group(3)
-
-        if re.match(r'[A-F0-9]{4}', message):
-            result["receiver"] = "R0"
-
-        area_match = re.search(r'/PA(\d+)', message)
-        if area_match:
-            result["area"] = f"A{area_match.group(1)}"
-
-        logger.trace(f"(SIA_DC09) Parsed SIA message: {result}")
+            result["sequence"] = match.group(2)
+            result["receiver"] = f"R{match.group(3)}"
+            result["line"] = f"L{match.group(4)}"
+            result["area"] = f"A{match.group(5)}"
+            result["account"] = match.group(6)
     except Exception as e:
-        logger.error(f"(SIA_DC09) Failed to parse SIA message: {e}")
+        logger.warning(f"[SIA Parser] Failed to parse message: {e}")
 
     return result
-
-
-def is_ping(message: str) -> bool:
-    return '"NULL"' in message

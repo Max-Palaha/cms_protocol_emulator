@@ -8,21 +8,30 @@ class MasxmlModeSwitcher:
         self.protocol_mode = protocol_mode
 
     def handle_command(self, command: str):
+        logger.info(f"[MasxmlModeSwitcher] Received: '{command}'")
         tokens = command.strip().split()
+        logger.debug(f"[MasxmlModeSwitcher] Tokens: {tokens}")
         if not tokens:
             return
 
         cmd = tokens[0].lower()
+        logger.debug(f"[MasxmlModeSwitcher] cmd: {cmd}")
 
         # Handle nak with specific ResultCode like nak9, nak10
         if cmd.startswith("nak") and len(cmd) > 3:
             code_str = cmd[3:]
+            print(f"[DEBUG] CMD={cmd}, code_str={code_str}, tokens={tokens}")
+            logger.debug(f"[MasxmlModeSwitcher] Detected NAK command with code_str: {code_str}")
             if code_str.isdigit():
                 result_code = int(code_str)
                 count = int(tokens[1]) if len(tokens) >= 2 and tokens[1].isdigit() else None
-                self.protocol_mode.nak_result_code = result_code
+                print(f"[DEBUG] Parsed NAK: result_code={result_code}, count={count}")
+                self.protocol_mode.set_nak_result_code(result_code)
                 self.protocol_mode.set_mode(EmulationMode.NAK, count=count)
                 logger.info(f"[MasxmlModeSwitcher] Switched to NAK mode with ResultCode {result_code}")
+                return
+            else:
+                logger.warning(f"[MasxmlModeSwitcher] Invalid code_str for nak: '{code_str}'")
                 return
 
         if cmd in ["ack", "nak", "no-response", "only-ping"]:

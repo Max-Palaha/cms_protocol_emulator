@@ -3,13 +3,13 @@ from enum import Enum
 
 
 class Receiver(str, Enum):
-    TRANSLATOR = "TRANSLATOR"
-    CLOUD_SIGNALLING = "CLOUD_SIGNALLING"
-    CMS = "CMS"
-    CMS_MASXML = "CMS_MASXML"
-    CMS_SBN = "CMS_SBN"
-    CMS_MANITOU = "CMS_MANITOU"
-    CMS_SIA_DCS = "CMS_SIA_DCS"
+    TRANSLATOR = "main"
+    CLOUD_SIGNALLING = "signalling"
+    CMS = "cms"
+    CMS_MASXML = "cms_masxml"
+    CMS_SBN = "cms_sbn"
+    CMS_MANITOU = "cms_manitou"
+    CMS_SIA_DCS = "sia_dcs"
 
 
 class ResourceAttachmentStatus(Enum):

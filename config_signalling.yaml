@@ -4,11 +4,10 @@ environment:
     signalling: 2323
     cms: 6969
     sia_dcs: 4556
-    cms-sia-dcs: 4556  # Do not use
-    cms-masxml: 6667
-    cms-sbn: 6677
-    cms-manitou: 6777
+    cms_masxml: 6667
+    cms_sbn: 6677
+    cms_manitou: 6777
     dummy: 9999
 
 logging:
-  level: INFO  # Можливо: DEBUG, INFO, WARNING, ERROR, CRITICAL, TRACE
+  level: DEBUG  # Можливо: DEBUG, INFO, WARNING, ERROR, CRITICAL, TRACE

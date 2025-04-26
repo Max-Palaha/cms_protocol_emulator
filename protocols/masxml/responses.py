@@ -6,8 +6,7 @@ from typing import Union
 def _prettify_xml(elem) -> str:
     """Returns a pretty-printed XML string for the Element."""
     rough_string = tostring(elem, encoding="utf-8")
-    reparsed = minidom.parseString(rough_string)
-    return reparsed.toprettyxml(indent="    ")
+    return rough_string.decode("utf-8")
 
 
 def convert_masxml_ack(data: Union[str, bytes]) -> str:
@@ -29,6 +28,7 @@ def convert_masxml_nak(
     text: str = "Poorly formed XML",
     code: Union[int, str] = 10,
 ) -> str:
+    print(f"[DEBUG] Generating NAK with ResultCode: {code}")
     if isinstance(data, bytes):
         data = data.decode()
 

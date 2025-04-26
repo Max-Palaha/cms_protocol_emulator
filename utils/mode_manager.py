@@ -47,6 +47,14 @@ class ProtocolMode:
         next_info = f" then switch to {next_mode.value}" if next_mode else ""
         logger.info(f"[MODE_MANAGER] Switched to mode: {mode.value}{count_info}{next_info}")
 
+    def set_nak_result_code(self, code: int):
+        logger.info(f"[ProtocolMode] NAK result code set to {code}")
+        self.nak_result_code = code
+
+    def get_nak_code(self) -> int:
+        print(f"[DEBUG] get_nak_code() returns {self.nak_result_code}")
+        return self.nak_result_code if self.nak_result_code is not None else 10
+
     def consume_packet(self) -> bool:
         if self.mode_packet_count is not None:
             self.mode_packet_count -= 1

@@ -24,6 +24,8 @@ async def stdin_listener(protocol_key: str, mode_switcher=None):
         if not command:
             continue
 
+        logger.info(f"[STDIN] Received command: '{command}'")
+
         parts = command.split()
         cmd = parts[0].lower()
 
@@ -39,6 +41,7 @@ async def stdin_listener(protocol_key: str, mode_switcher=None):
 
         # If a custom mode switcher is provided (e.g., for MASXML), delegate logic
         if mode_switcher:
+            logger.info("[STDIN] Delegating to custom mode switcher...")
             mode_switcher.handle_command(command)
             continue
 
