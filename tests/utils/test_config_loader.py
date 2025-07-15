@@ -7,7 +7,7 @@ TEST_YAML = """
 environment:
   ports:
     sia-dcs: 1234
-    cms-masxml: 5678
+    masxml: 5678
 logging:
   level: DEBUG
 """
@@ -40,4 +40,4 @@ def test_get_port_by_key(monkeypatch, tmp_path):
     config_loader.load_config(force_reload=True)
 
     assert config_loader.get_port_by_key("sia_dcs") == 1234
-    assert config_loader.get_port_by_key("cms-masxml") == 5678
+    assert config_loader.get_port_by_key("masxml") == 5678

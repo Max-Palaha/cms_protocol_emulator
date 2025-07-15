@@ -9,10 +9,10 @@ from utils.tools import logger
 from utils.registry_tools import register_protocol
 
 
-@register_protocol(Receiver.CMS_SIA_DCS)
+@register_protocol(Receiver.SIA_DCS)
 class SIADC09Protocol(BaseProtocol):
     def __init__(self):
-        super().__init__(receiver=Receiver.CMS_SIA_DCS)
+        super().__init__(receiver=Receiver.SIA_DCS)
         self.protocol_mode = mode_manager.get(self.receiver.value)
 
     async def run(self):
@@ -29,27 +29,16 @@ class SIADC09Protocol(BaseProtocol):
             return
 
         timestamp = self.protocol_mode.get_response_timestamp()
+        parsed = parse_sia_message(message)
 
         if is_ping(message):
             if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:
                 if current_mode == EmulationMode.NAK:
-                    nak = convert_sia_nak(
-                        sequence="0005",
-                        receiver="R0",
-                        line="L0",
-                        account="#000",
-                        timestamp=timestamp,
-                    )
+                    nak = convert_sia_nak(**parsed, timestamp=timestamp)
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
                     writer.write(nak.encode())
                 else:
-                    ack = convert_sia_ack(
-                        sequence="0005",
-                        receiver="R0",
-                        line="L0",
-                        account="#000",
-                        timestamp=timestamp,
-                    )
+                    ack = convert_sia_ack(**parsed, timestamp=timestamp)
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
                     writer.write(ack.encode())
                 await writer.drain()
@@ -73,8 +62,6 @@ class SIADC09Protocol(BaseProtocol):
             delay = self.protocol_mode.delay_seconds
             logger.info(f"({self.receiver}) Delaying response by {delay}s")
             await asyncio.sleep(delay)
-
-        parsed = parse_sia_message(message)
 
         if current_mode == EmulationMode.NAK:
             nak = convert_sia_nak(**parsed, timestamp=timestamp)

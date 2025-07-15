@@ -1,15 +1,59 @@
-# Python
+# IDE/Editor folders
+.idea/
+.vscode/
+
+# Mac/OS & misc
+.DS_Store
+.directory
+
+# Python cache/compiled
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.venv/
-venv/
-.env
+.python-version
+
+# pytest & coverage
+.pytest_cache/
+.coverage
+
+# Log and config files (anywhere in repo)
+logs/
 *.log
+*.cfg
+nohup.out
 
-# VS Code
-.vscode/
+# Compiled Qt files
+*.qmlc
 
-# macOS
-.DS_Store
+# Exclude build/dist artifacts (setuptools, pip, etc)
+build/
+dist/
+*.egg-info/
+aiohts.egg-info/
+
+# Virtual environments (common names)
+venv/
+.venv/
+env/
+
+# Dumps, templates, sandboxes
+dumps/
+templates/
+**/sandbox/
+
+# Secret & env files (anywhere)
+.env
+**/.env
+
+# Exclude resources & development artifacts
+resources.py
+simple.py
+!libs/aiohts/aiohts/meteora/hybrid/templates/
+
+# Sandbox and temp files (optional)
+*.spec
+
+# ! -- exception example (won't un-ignore if above already ignored whole folder)
+# !aiohts/parser/logs/
+

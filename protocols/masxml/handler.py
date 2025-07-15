@@ -10,10 +10,10 @@ from utils.registry_tools import register_protocol
 from protocols.masxml.mode_switcher import MasxmlModeSwitcher
 
 
-@register_protocol(Receiver.CMS_MASXML)
+@register_protocol(Receiver.MASXML)
 class MasxmlProtocol(BaseProtocol):
     def __init__(self):
-        super().__init__(receiver=Receiver.CMS_MASXML)
+        super().__init__(receiver=Receiver.MASXML)
         self.protocol_mode = mode_manager.get(self.receiver.value)
         self.mode_switcher = MasxmlModeSwitcher(self.protocol_mode)
 
