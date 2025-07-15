@@ -11,7 +11,7 @@ import protocols.sia_dc09.handler
 
 async def main():
     logger.info("Launching SIA-DC09 emulator...")
-    protocol_class = get_protocol_handler(Receiver.CMS_SIA_DCS)
+    protocol_class = get_protocol_handler(Receiver.SIA_DCS)
     protocol_instance = protocol_class()
     await protocol_instance.run()
 

@@ -11,7 +11,7 @@ import protocols.masxml.handler
 
 async def main():
     logger.info("Launching MASXML emulator...")
-    protocol_class = get_protocol_handler(Receiver.CMS_MASXML)
+    protocol_class = get_protocol_handler(Receiver.MASXML)
     protocol_instance = protocol_class()
     await protocol_instance.run()
 

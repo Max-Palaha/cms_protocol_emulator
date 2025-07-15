@@ -6,10 +6,10 @@ class Receiver(str, Enum):
     TRANSLATOR = "TRANSLATOR"
     CLOUD_SIGNALLING = "CLOUD_SIGNALLING"
     CMS = "CMS"
-    CMS_MASXML = "CMS_MASXML"
-    CMS_SBN = "CMS_SBN"
-    CMS_MANITOU = "CMS_MANITOU"
-    CMS_SIA_DCS = "CMS_SIA_DCS"
+    MASXML = "MASXML"
+    SBN = "SBN"
+    MANITOU = "MANITOU"
+    SIA_DCS = "SIA_DCS"
 
 
 class ResourceAttachmentStatus(Enum):
