@@ -1,6 +1,6 @@
 import random
 import string
-from utils.tools import logger
+from utils.logger import logger
 
 
 def generate_random_str12() -> str:

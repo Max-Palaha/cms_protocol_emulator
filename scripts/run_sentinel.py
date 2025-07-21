@@ -7,11 +7,11 @@ from utils.registry_tools import get_protocol_handler
 from utils.constants import Receiver
 from utils.logger import logger
 
-import protocols.masxml.handler
+import protocols.sentinel.handler
 
 async def main():
-    logger.info("Launching MASXML emulator...")
-    protocol_class = get_protocol_handler(Receiver.MASXML)
+    logger.info("Launching SENTINEL emulator...")
+    protocol_class = get_protocol_handler(Receiver.SENTINEL)
     protocol_instance = protocol_class()
     await protocol_instance.run()
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 from utils.mode_manager import EmulationMode, TimeModeDuration
-from utils.tools import logger
+from utils.logger import logger
 
 
 class MasxmlModeSwitcher:

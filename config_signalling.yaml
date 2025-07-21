@@ -7,6 +7,8 @@ environment:
     masxml: 6667
     sbn: 6677
     manitou: 6777
+    microkey: 6767
+    sentinel: 7777
     dummy: 9999
 
 logging:

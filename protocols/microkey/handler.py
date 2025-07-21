@@ -3,16 +3,15 @@ from core.connection_handler import BaseProtocol
 from utils.constants import Receiver
 from utils.mode_manager import mode_manager, EmulationMode
 from utils.stdin_listener import stdin_listener
-from protocols.sia_dc09.parser import parse_sia_message, is_ping
-from protocols.sia_dc09.responses import convert_sia_ack, convert_sia_nak
+from .parser import parse_microkey_sequence, is_ping_microkey
+from .responses import generate_ack, generate_nak
 from utils.logger import logger
 from utils.registry_tools import register_protocol
 
-
-@register_protocol(Receiver.SIA_DCS)
-class SIADC09Protocol(BaseProtocol):
+@register_protocol(Receiver.MICROKEY)
+class MicrokeyProtocol(BaseProtocol):
     def __init__(self):
-        super().__init__(receiver=Receiver.SIA_DCS)
+        super().__init__(receiver=Receiver.MICROKEY)
         self.protocol_mode = mode_manager.get(self.receiver.value)
 
     async def run(self):
@@ -29,18 +28,21 @@ class SIADC09Protocol(BaseProtocol):
             return
 
         timestamp = self.protocol_mode.get_response_timestamp()
-        parsed = parse_sia_message(message)
+        sequence = parse_microkey_sequence(message)
+        if sequence is None:
+            logger.warning(f"({self.receiver}) Invalid message format from {client_ip}:{client_port}: {message!r}")
+            return
 
-        if is_ping(message):
+        if is_ping_microkey(message):
             if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:
                 if current_mode == EmulationMode.NAK:
-                    nak = convert_sia_nak(**parsed, timestamp=timestamp)
+                    nak = generate_nak(sequence)
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
-                    writer.write(nak.encode())
+                    writer.write(nak)
                 else:
-                    ack = convert_sia_ack(**parsed, timestamp=timestamp)
+                    ack = generate_ack(sequence)
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
-                    writer.write(ack.encode())
+                    writer.write(ack)
                 await writer.drain()
             else:
                 logger.info(f"({self.receiver}) ({client_ip}) PING received — skipped due to mode: {current_mode.value}")
@@ -64,13 +66,13 @@ class SIADC09Protocol(BaseProtocol):
             await asyncio.sleep(delay)
 
         if current_mode == EmulationMode.NAK:
-            nak = convert_sia_nak(**parsed, timestamp=timestamp)
+            nak = generate_nak(sequence)
             logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
-            writer.write(nak.encode())
+            writer.write(nak)
         else:
-            ack = convert_sia_ack(**parsed, timestamp=timestamp)
+            ack = generate_ack(sequence)
             logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
-            writer.write(ack.encode())
+            writer.write(ack)
 
         await writer.drain()
         self.protocol_mode.consume_packet()

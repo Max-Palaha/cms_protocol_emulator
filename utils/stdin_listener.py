@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from utils.mode_manager import EmulationMode, TimeModeDuration, mode_manager
-from utils.tools import logger
+from utils.logger import logger
 
 VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "TRACE"]
 MODES_WITH_COUNT = ["ack", "nak", "no-response"]

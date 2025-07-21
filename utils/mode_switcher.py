@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from utils.mode_manager import mode_manager
-from utils.tools import logger
+from utils.logger import logger
 
 
 class BaseModeSwitcher(ABC):

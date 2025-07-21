@@ -6,7 +6,7 @@ from utils.mode_manager import mode_manager, EmulationMode
 from utils.stdin_listener import stdin_listener
 from protocols.manitou.parser import parse_manitou_message, is_ping
 from protocols.manitou.responses import convert_manitou_ack, convert_manitou_nak
-from utils.tools import logger
+from utils.logger import logger
 from utils.registry_tools import register_protocol
 
 @register_protocol(Receiver.MANITOU)

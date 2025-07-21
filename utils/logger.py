@@ -3,9 +3,10 @@ import pathlib
 import logging
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-
 from utils.constants import LOGS_FILE_PATH
 
+TRACE_LEVEL = 5
+logging.addLevelName(TRACE_LEVEL, "TRACE")
 
 class MillisecondFormatter(logging.Formatter):
     """Formatter with millisecond timestamp."""
@@ -20,6 +21,17 @@ class MillisecondFormatter(logging.Formatter):
             s = "%s,%03d" % (t, record.msecs)
         return s
 
+class BytesLoggingMixin:
+    def log_bytes(self, direction, receiver, client_ip, data: bytes, label: str = ""):
+        msg = f"({receiver}) ({client_ip}) {direction} [{label}] {data!r}"
+        self.info(msg)
+
+class ExtendedLogger(logging.Logger, BytesLoggingMixin):
+    def trace(self, msg, *args, **kwargs):
+        if self.isEnabledFor(TRACE_LEVEL):
+            self._log(TRACE_LEVEL, msg, args, **kwargs)
+
+logging.setLoggerClass(ExtendedLogger)
 
 def setup_logger(
     name: str = "log",
@@ -59,6 +71,5 @@ def setup_logger(
 
     logger_obj.handlers = [file_handler, handler_console]
     return logger_obj
-
 
 logger = setup_logger()

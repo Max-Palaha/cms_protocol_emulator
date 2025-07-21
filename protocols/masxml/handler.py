@@ -3,7 +3,7 @@ from core.connection_handler import BaseProtocol
 from utils.constants import Receiver
 from utils.mode_manager import mode_manager, EmulationMode
 from utils.stdin_listener import stdin_listener
-from utils.tools import logger
+from utils.logger import logger
 from protocols.masxml.parser import is_ping
 from protocols.masxml.responses import convert_masxml_ack, convert_masxml_nak
 from utils.registry_tools import register_protocol

@@ -1,6 +1,6 @@
 import re
 from typing import Union, Dict
-from utils.tools import logger
+from utils.logger import logger
 
 # compile regex to capture header length and body
 MANITOU_HEADER_PATTERN = re.compile(

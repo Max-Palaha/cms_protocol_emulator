@@ -1,6 +1,6 @@
 import re
 from typing import Union, Dict
-from utils.tools import logger
+from utils.logger import logger
 
 # compile one regex to capture all header fields at once
 SIA_HEADER_PATTERN = re.compile(
