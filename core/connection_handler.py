@@ -1,22 +1,22 @@
 import asyncio
-from abc import ABC, abstractmethod
-from typing import Optional
 from utils.tools import logger
 from utils.config_loader import get_port_by_key
 
-
-class BaseProtocol(ABC):
+class BaseProtocol:
     def __init__(self, receiver):
         self.receiver = receiver
         self.port = get_port_by_key(receiver)
 
-    def get_label(self, data: bytes) -> Optional[str]:
-        return None
+    async def handle(self, reader, writer, client_ip, client_port, data: bytes):
+        """
+        Default handler: just log incoming raw data.
+        Child classes should override for custom parsing/masking/logging.
+        """
+        logger.info(f"({self.receiver}) ({client_ip}) <<-- {data.decode(errors='replace').strip()}")
 
     async def run(self):
         logger.info(f"({self.receiver}) Starting server on port {self.port}")
         await start_server(self)
-
 
 async def start_server(protocol: BaseProtocol):
     server = await asyncio.start_server(
@@ -24,14 +24,12 @@ async def start_server(protocol: BaseProtocol):
         host="0.0.0.0",
         port=protocol.port,
     )
-
     addr = server.sockets[0].getsockname()
     logger.info(f"({protocol.receiver}) Serving on {addr}")
     async with server:
         await server.serve_forever()
 
-
-async def _handle_connection(protocol: BaseProtocol, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+async def _handle_connection(protocol: BaseProtocol, reader, writer):
     peername = writer.get_extra_info("peername")
     client_ip, client_port = peername[0], peername[1]
     protocol_name = protocol.receiver.value.split(".")[-1]
@@ -43,14 +41,7 @@ async def _handle_connection(protocol: BaseProtocol, reader: asyncio.StreamReade
             if not data:
                 break
 
-            label = protocol.get_label(data)
-            if label is None:
-                label = ""
-
-            logger.log_bytes("<<--", protocol_name, client_ip, data, label=label)
-
             await protocol.handle(reader, writer, client_ip, client_port, data)
-
     except Exception as e:
         logger.error(f"({protocol_name}) Error while handling connection from {client_ip}:{client_port}: {e}")
     finally:

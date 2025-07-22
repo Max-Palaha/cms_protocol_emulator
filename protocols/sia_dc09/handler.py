@@ -21,12 +21,18 @@ class SIADC09Protocol(BaseProtocol):
             stdin_listener(self.receiver.value),
         )
 
-    async def handle(self, reader, writer, client_ip, client_port, message: str):
-        current_mode = self.protocol_mode.mode  # Save current mode BEFORE response
+    async def handle(self, reader, writer, client_ip, client_port, data):
+
+        current_mode = self.protocol_mode.mode
 
         if current_mode == EmulationMode.NO_RESPONSE:
             logger.info(f"({self.receiver}) NO_RESPONSE mode: skipping reply")
             return
+
+        if isinstance(data, bytes):
+            message = data.decode(errors="ignore")
+        else:
+            message = data
 
         timestamp = self.protocol_mode.get_response_timestamp()
         parsed = parse_sia_message(message)
@@ -36,11 +42,11 @@ class SIADC09Protocol(BaseProtocol):
                 if current_mode == EmulationMode.NAK:
                     nak = convert_sia_nak(**parsed, timestamp=timestamp)
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
-                    writer.write(nak.encode())
+                    writer.write(nak.encode() if isinstance(nak, str) else nak)
                 else:
                     ack = convert_sia_ack(**parsed, timestamp=timestamp)
                     logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
-                    writer.write(ack.encode())
+                    writer.write(ack.encode() if isinstance(ack, str) else ack)
                 await writer.drain()
             else:
                 logger.info(f"({self.receiver}) ({client_ip}) PING received — skipped due to mode: {current_mode.value}")
@@ -66,11 +72,11 @@ class SIADC09Protocol(BaseProtocol):
         if current_mode == EmulationMode.NAK:
             nak = convert_sia_nak(**parsed, timestamp=timestamp)
             logger.info(f"({self.receiver}) ({client_ip}) -->> {nak.strip()}")
-            writer.write(nak.encode())
+            writer.write(nak.encode() if isinstance(nak, str) else nak)
         else:
             ack = convert_sia_ack(**parsed, timestamp=timestamp)
             logger.info(f"({self.receiver}) ({client_ip}) -->> {ack.strip()}")
-            writer.write(ack.encode())
+            writer.write(ack.encode() if isinstance(ack, str) else ack)
 
         await writer.drain()
         self.protocol_mode.consume_packet()

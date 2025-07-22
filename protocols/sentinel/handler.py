@@ -40,7 +40,7 @@ class SentinelProtocol(BaseProtocol):
             response = get_ack()
             writer.write(response)
             await writer.drain()
-            logger.log_bytes("-->>", protocol_name, client_ip, response, label="ACK (PING)")
+            logger.info("-->>", protocol_name, client_ip, response, label="ACK (PING)")
             return
 
         try:
@@ -49,7 +49,7 @@ class SentinelProtocol(BaseProtocol):
             response = get_nak()
             writer.write(response)
             await writer.drain()
-            logger.log_bytes("-->>", protocol_name, client_ip, response, label="NAK (decode error)")
+            logger.info("-->>", protocol_name, client_ip, response, label="NAK (decode error)")
             return
 
         mode = self.mode_switcher.get_mode()
@@ -60,9 +60,9 @@ class SentinelProtocol(BaseProtocol):
             response = get_nak()
             writer.write(response)
             await writer.drain()
-            logger.log_bytes("-->>", protocol_name, client_ip, response, label="NAK")
+            logger.info("-->>", protocol_name, client_ip, response, label="NAK")
         else:
             response = get_ack()
             writer.write(response)
             await writer.drain()
-            logger.log_bytes("-->>", protocol_name, client_ip, response, label="ACK")
+            logger.info("-->>", protocol_name, client_ip, response, label="ACK")
