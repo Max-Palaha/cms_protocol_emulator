@@ -12,10 +12,10 @@ class BaseProtocol:
         Default handler: just log incoming raw data.
         Child classes should override for custom parsing/masking/logging.
         """
-        logger.info(f"({self.receiver}) ({client_ip}) <<-- {data.decode(errors='replace').strip()}")
+        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- {data.decode(errors='replace').strip()}")
 
     async def run(self):
-        logger.info(f"({self.receiver}) Starting server on port {self.port}")
+        logger.info(f"({self.receiver.value}) Starting server on port {self.port}")
         await start_server(self)
 
 async def start_server(protocol: BaseProtocol):
@@ -25,7 +25,7 @@ async def start_server(protocol: BaseProtocol):
         port=protocol.port,
     )
     addr = server.sockets[0].getsockname()
-    logger.info(f"({protocol.receiver}) Serving on {addr}")
+    logger.info(f"({protocol.receiver.value}) Serving on {addr}")
     async with server:
         await server.serve_forever()
 

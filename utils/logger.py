@@ -5,14 +5,14 @@ from logging.handlers import RotatingFileHandler
 class SafeFormatter(logging.Formatter):
     def format(self, record):
         if not hasattr(record, "protocol"):
-            record.protocol = "-"
+            record.protocol = ""
         if not hasattr(record, "client_ip"):
-            record.client_ip = "-"
+            record.client_ip = ""
         return super().format(record)
 
 def get_formatter():
-    return SafeFormatter(
-        '%(levelname)-8s %(asctime)s (%(protocol)s) (%(client_ip)s) %(message)s',
+    return logging.Formatter(
+        '%(levelname)-8s %(asctime)s %(message)s',
         datefmt='%y-%m-%d %H:%M:%S'
     )
 
