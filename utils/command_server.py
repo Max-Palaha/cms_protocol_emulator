@@ -12,16 +12,34 @@ async def start_command_server(host, port, mode_switcher):
 
 async def handle_command(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, mode_switcher):
     addr = writer.get_extra_info('peername')
-    data = await reader.read(1024)
-    message = data.decode().strip()
-    logger.info(f"[CMD] Mode before: {mode_switcher.protocol_mode.mode}")
-    logger.info(f"[CMD] Received command from {addr}: {message}")
-    if mode_switcher:
-        print(f"[DEBUG] Delegating to handle_command: {message}")
-        mode_switcher.handle_command(message)
-    logger.info(f"[CMD] Mode after: {mode_switcher.protocol_mode.mode}")
-    logger.info(f"[CMD] NAK code after: {getattr(mode_switcher.protocol_mode, 'nak_result_code', None)}")
-    writer.write(b"OK\n")
-    await writer.drain()
-    writer.close()
-    await writer.wait_closed()
+    try:
+        data = await reader.read(1024)
+        message = data.decode(errors="replace").strip()
+        logger.info(f"[CMD] Received command from {addr}: {message}")
+
+        if not message:
+            logger.warning(f"[CMD] Empty message received from {addr}")
+            writer.write(b"OK\n")
+            await writer.drain()
+            return
+
+        if mode_switcher:
+            try:
+                mode_switcher.handle_command(message)
+                writer.write(b"OK\n")
+                await writer.drain()
+            except Exception as e:
+                logger.error(f"[CMD] Failed to handle command '{message}': {e}")
+                writer.write(b"ERROR\n")
+                await writer.drain()
+        else:
+            logger.error("[CMD] No mode_switcher available")
+            writer.write(b"ERROR\n")
+            await writer.drain()
+
+    except Exception as e:
+        logger.error(f"[CMD] Exception during command handling: {e}")
+    finally:
+        if not writer.is_closing():
+            writer.close()
+            await writer.wait_closed()

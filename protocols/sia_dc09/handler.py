@@ -6,61 +6,9 @@ from protocols.sia_dc09.parser import parse_sia_message, is_ping
 from protocols.sia_dc09.responses import convert_sia_ack, convert_sia_nak
 from utils.tools import logger
 from utils.registry_tools import register_protocol
-from utils.mode_switcher import BaseModeSwitcher
 from utils.mode_manager import EmulationMode, ProtocolMode
 
-
-class SiaModeSwitcher(BaseModeSwitcher):
-    def handle_command(self, command: str):
-        logger.debug(f"[SiaModeSwitcher] Received command: {command}")
-        tokens = command.strip().lower().split()
-        if not tokens:
-            self._invalid_command(command)
-            return
-
-        cmd = tokens[0]
-        if cmd in ["ack", "nak", "none", "no-response", "only-ping"]:
-            times = None
-            next_mode = None
-            if len(tokens) >= 2 and tokens[1].isdigit():
-                times = int(tokens[1])
-            if len(tokens) >= 4 and tokens[2] == "then":
-                next_mode = tokens[3].upper()
-
-            try:
-                mode = EmulationMode[cmd.upper().replace("-", "_")]
-                self.protocol_mode.set_mode(mode, times=times, next_mode=next_mode)
-                logger.info(f"[SiaModeSwitcher] Switched to {mode.name} for {times or '∞'} times, then {next_mode or 'ACK'}")
-            except KeyError:
-                self._invalid_command(command)
-
-        elif cmd == "drop" and len(tokens) == 2:
-            try:
-                self.protocol_mode.set_drop(int(tokens[1]))
-                logger.info(f"[SiaModeSwitcher] Dropping next {tokens[1]} packets")
-            except ValueError:
-                self._invalid_command(command)
-
-        elif cmd == "delay" and len(tokens) == 2:
-            try:
-                self.protocol_mode.set_delay(float(tokens[1]))
-                logger.info(f"[SiaModeSwitcher] Delay set to {tokens[1]} seconds")
-            except ValueError:
-                self._invalid_command(command)
-
-        elif cmd == "time" and len(tokens) >= 2:
-            try:
-                from utils.tools import parse_custom_time
-                time_str = " ".join(tokens[1:3])
-                duration = tokens[3] if len(tokens) > 3 else "once"
-                dt = parse_custom_time(time_str)
-                self.protocol_mode.set_custom_time(dt, duration)
-                logger.info(f"[SiaModeSwitcher] Time override set to {dt} for {duration}")
-            except Exception as e:
-                logger.warning(f"[SiaModeSwitcher] Invalid time command: {e}")
-                self._invalid_command(command)
-        else:
-            self._invalid_command(command)
+from protocols.sia_dc09.mode_switcher import SiaModeSwitcher
 
 
 @register_protocol(Receiver.CMS_SIA_DCS)
