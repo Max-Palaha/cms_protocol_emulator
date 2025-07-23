@@ -1,4 +1,5 @@
 import asyncio
+import re
 from core.connection_handler import BaseProtocol
 from utils.constants import Receiver
 from utils.mode_manager import mode_manager, EmulationMode
@@ -21,6 +22,51 @@ class SIADC09Protocol(BaseProtocol):
             stdin_listener(self.receiver.value),
         )
 
+    def get_sia_label(self, message: str) -> str:
+        if '"NULL"' in message:
+            return "PING"
+
+        if '"SIA-DCS"' in message:
+            event_match = re.search(r'"SIA-DCS".*?([A-Z]{2})', message)
+            code = event_match.group(1) if event_match else None
+
+            photo_link = re.search(r'"Vhttps".*?(i.ajax)|(image)', message)
+            if photo_link:
+                return f"PHOTO {code}"
+            
+            any_link = re.search(r'"Vhttps".*?(web)|(ajax-pro-desktop)', message)
+            if any_link:
+                return f"LINK {code}"
+            
+            return f"EVENT {code}"
+
+        if '"ADM-CID"' in message:
+            event_match = re.search(r'\|(\d{4})\s', message)
+            code = event_match.group(1) if event_match else None
+
+            photo_link = re.search(r'"Vhttps".*?(i.ajax)|(image)', message)
+            if photo_link and code:
+                return f"PHOTO {code}"
+
+            any_link = re.search(r'"Vhttps".*?(web)|(ajax-pro-desktop)', message)
+            if any_link and code:
+                return f"LINK {code}"
+
+            if code:
+                return f"EVENT {code}"
+            return "EVENT ADM-CID"
+
+        return "UNKNOWN"
+
+    def get_sia_response_label(self, response: str, original_message: str = None) -> str:
+        if '"ACK"' in response:
+            code = self.get_sia_label(original_message)
+            return f"ACK {code}" if code != "UNKNOWN" else "ACK"
+        if '"NAK"' in response:
+            code = self.get_sia_label(original_message)
+            return f"NAK {code}" if code != "UNKNOWN" else "NAK"
+        return "RESPONSE"
+
     async def handle(self, reader, writer, client_ip, client_port, data):
 
         current_mode = self.protocol_mode.mode
@@ -36,16 +82,24 @@ class SIADC09Protocol(BaseProtocol):
 
         timestamp = self.protocol_mode.get_response_timestamp()
         parsed = parse_sia_message(message)
+        if not parsed:
+            logger.warning(f"({self.receiver.value}) ({client_ip}) Invalid SIA message: {message.strip()}")
+            return
+        
+        label_in = self.get_sia_label(message)
+        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label_in}] {message.strip()}")
 
         if is_ping(message):
             if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:
                 if current_mode == EmulationMode.NAK:
                     nak = convert_sia_nak(**parsed, timestamp=timestamp)
-                    logger.info(f"({self.receiver.value}) ({client_ip}) -->> {nak.strip()}")
+                    label_out = self.get_sia_response_label(nak, message)
+                    logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {nak.strip()}")
                     writer.write(nak.encode() if isinstance(nak, str) else nak)
                 else:
                     ack = convert_sia_ack(**parsed, timestamp=timestamp)
-                    logger.info(f"({self.receiver.value}) ({client_ip}) -->> {ack.strip()}")
+                    label_out = self.get_sia_response_label(ack, message)
+                    logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {ack.strip()}")
                     writer.write(ack.encode() if isinstance(ack, str) else ack)
                 await writer.drain()
             else:
@@ -71,11 +125,13 @@ class SIADC09Protocol(BaseProtocol):
 
         if current_mode == EmulationMode.NAK:
             nak = convert_sia_nak(**parsed, timestamp=timestamp)
-            logger.info(f"({self.receiver.value}) ({client_ip}) -->> {nak.strip()}")
+            label_out = self.get_sia_response_label(nak, message)
+            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {nak.strip()}")
             writer.write(nak.encode() if isinstance(nak, str) else nak)
         else:
             ack = convert_sia_ack(**parsed, timestamp=timestamp)
-            logger.info(f"({self.receiver.value}) ({client_ip}) -->> {ack.strip()}")
+            label_out = self.get_sia_response_label(ack, message)
+            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {ack.strip()}")
             writer.write(ack.encode() if isinstance(ack, str) else ack)
 
         await writer.drain()
