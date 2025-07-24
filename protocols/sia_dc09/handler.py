@@ -9,6 +9,16 @@ from protocols.sia_dc09.responses import convert_sia_ack, convert_sia_nak
 from utils.logger import logger
 from utils.registry_tools import register_protocol
 
+def classify_v_link(link: str) -> str:
+    if link.startswith('https://i.ajax.systems/s/'):
+        return 'PHOTO'
+    if link.startswith('https://ajax-cdn-prod.s3.') or '.jpg' in link or '/image_' in link:
+        return 'PHOTO'
+    if link.startswith('https://web.ajax.systems'):
+        return 'WEB'
+    if link.startswith('ajax-pro-desktop://'):
+        return 'DESKTOP'
+    return 'LINK'
 
 @register_protocol(Receiver.SIA_DCS)
 class SIADC09Protocol(BaseProtocol):
@@ -26,37 +36,110 @@ class SIADC09Protocol(BaseProtocol):
         if '"NULL"' in message:
             return "PING"
 
-        if '"SIA-DCS"' in message:
+        if '"SIA-DCS"' in message :
             event_match = re.search(r'"SIA-DCS".*?([A-Z]{2})', message)
-            code = event_match.group(1) if event_match else None
-
-            photo_link = re.search(r'"Vhttps".*?(i.ajax)|(image)', message)
-            if photo_link:
-                return f"PHOTO {code}"
-            
-            any_link = re.search(r'"Vhttps".*?(web)|(ajax-pro-desktop)', message)
-            if any_link:
+            code = event_match.group(1)
+            photo_links, web_links, desktop_links, other_links = self.get_link_summary(message)
+            if photo_links:
+                return f"PHOTO {code} x{len(photo_links)}"
+            if web_links:
+                return f"WEB_LINK {code}"
+            if desktop_links:
+                return f"DESKTOP_LINK {code}"
+            if other_links:
                 return f"LINK {code}"
-            
             return f"EVENT {code}"
 
         if '"ADM-CID"' in message:
             event_match = re.search(r'\|(\d{4})\s', message)
             code = event_match.group(1) if event_match else None
-
-            photo_link = re.search(r'"Vhttps".*?(i.ajax)|(image)', message)
-            if photo_link and code:
-                return f"PHOTO {code}"
-
-            any_link = re.search(r'"Vhttps".*?(web)|(ajax-pro-desktop)', message)
-            if any_link and code:
+            photo_links, web_links, desktop_links, other_links = self.get_link_summary(message)
+            if photo_links:
+                return f"PHOTO {code} x{len(photo_links)}"
+            if web_links:
+                return f"WEB_LINK {code}"
+            if desktop_links:
+                return f"DESKTOP_LINK {code}"
+            if other_links:
                 return f"LINK {code}"
-
-            if code:
-                return f"EVENT {code}"
-            return "EVENT ADM-CID"
+            return f"EVENT {code}"
 
         return "UNKNOWN"
+
+    def extract_photo_links(self, message: str):
+        v_links = re.findall(r'\[V([^\]]+)\]', message)
+        photo_links = []
+        for v in v_links:
+            parts = [part.strip() for part in v.split(',')]
+            for part in parts:
+                if (
+                    part.startswith('https://i.ajax.systems/s/')
+                    or part.startswith('https://ajax-cdn-prod.s3.')
+                    or '.jpg' in part
+                    or '/image_' in part
+                ):
+                    photo_links.append(part)
+        return photo_links
+
+    def get_link_summary(self, message: str):
+        v_links = re.findall(r'\[V([^\]]+)\]', message)
+        photo_links = []
+        web_links = []
+        desktop_links = []
+        other_links = []
+        for v in v_links:
+            parts = [part.strip() for part in v.split(',')]
+            for part in parts:
+                t = classify_v_link(part)
+                if t == 'PHOTO':
+                    photo_links.append(part)
+                elif t == 'WEB' and not web_links:
+                    web_links.append(part)
+                elif t == 'DESKTOP' and not desktop_links:
+                    desktop_links.append(part)
+                elif t == 'LINK' and not other_links:
+                    other_links.append(part)
+        return photo_links, web_links, desktop_links, other_links
+
+    def mask_links_for_log(self, message: str) -> str:
+        """
+        Leave only the first photo link in each [V...] block, others replaced with [PHOTO_URL], no extra markers.
+        """
+        def mask_v_block(match):
+            v_content = match.group(1)
+            parts = [part.strip() for part in v_content.split(',')]
+            photo_links = [
+                part for part in parts if (
+                    part.startswith('https://i.ajax.systems/s/')
+                    or part.startswith('https://ajax-cdn-prod.s3.')
+                    or '.jpg' in part
+                    or '/image_' in part
+                )
+            ]
+            if not photo_links:
+                return f"[V{v_content}]"
+            masked = []
+            seen_photos = 0
+            for part in parts:
+                if (
+                    part.startswith('https://i.ajax.systems/s/')
+                    or part.startswith('https://ajax-cdn-prod.s3.')
+                    or '.jpg' in part
+                    or '/image_' in part
+                ):
+                    if seen_photos == 0:
+                        masked.append(part)
+                    else:
+                        masked.append(" [PHOTO_URL]")
+                    seen_photos += 1
+                else:
+                    masked.append(part)
+            return "[V" + ','.join(masked) + "]"
+
+        masked_message = re.sub(r'\[V([^\]]+)\]', mask_v_block, message)
+        return masked_message
+
+
 
     def get_sia_response_label(self, response: str, original_message: str = None) -> str:
         if '"ACK"' in response:
@@ -85,9 +168,10 @@ class SIADC09Protocol(BaseProtocol):
         if not parsed:
             logger.warning(f"({self.receiver.value}) ({client_ip}) Invalid SIA message: {message.strip()}")
             return
-        
+
         label_in = self.get_sia_label(message)
-        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label_in}] {message.strip()}")
+        log_message = self.mask_links_for_log(message)
+        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label_in}] {log_message.strip()}")
 
         if is_ping(message):
             if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:

@@ -12,7 +12,7 @@ def parse_sia_message(message: Union[str, bytes]) -> Dict[str, str]:
 
     result = {
         "sequence": "0000",
-        "account":  "unknown",
+        "account":  "000",
     }
 
     account_match = re.search(r'L0#(\w+)', msg)
