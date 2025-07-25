@@ -1,93 +1,96 @@
 import asyncio
-
+import re
 from core.connection_handler import BaseProtocol
 from utils.constants import Receiver
 from utils.mode_manager import mode_manager, EmulationMode
 from utils.stdin_listener import stdin_listener
-from protocols.manitou.parser import parse_manitou_message, is_ping
-from protocols.manitou.responses import convert_manitou_ack, convert_manitou_nak
 from utils.logger import logger
 from utils.registry_tools import register_protocol
+from utils.media_logger import save_base64_media
+from protocols.manitou.responses import convert_ack, convert_nak
 
 @register_protocol(Receiver.MANITOU)
 class ManitouProtocol(BaseProtocol):
-    """Manitou protocol emulator."""
-
     def __init__(self):
-        # initialize BaseProtocol with MANITOU receiver
         super().__init__(receiver=Receiver.MANITOU)
-        # get the mode manager instance for this protocol
         self.protocol_mode = mode_manager.get(self.receiver.value)
 
     async def run(self):
-        """Start TCP server and command listener concurrently."""
         await asyncio.gather(
             super().run(),
-            stdin_listener(self.receiver.value),
+            stdin_listener(self.receiver.value, None),
         )
 
-    async def handle(self, reader, writer, client_ip, client_port, message: str):
-        """Handle a single incoming Manitou message."""
-        current_mode = self.protocol_mode.mode
+    async def handle(self, reader, writer, client_ip, client_port, data):
+        raw = data.decode(errors="ignore").strip()
 
-        # NO_RESPONSE: do not reply
-        if current_mode == EmulationMode.NO_RESPONSE:
+        # Extract from Packet and Signal XML
+        packet_id = re.search(r'<Packet ID="(.*?)"', raw)
+        event_type = re.search(r'<Signal[^>]*Event="(\w+)"', raw)
+        b64_data_match = re.search(r"<PacketData>(.*?)</PacketData>", raw, re.DOTALL)
+
+        packet_id_val = packet_id.group(1) if packet_id else "unknown"
+        event_code_val = event_type.group(1) if event_type else "UNKNOWN"
+
+        # Detect and mask photo payload
+        display_msg = raw
+        if b64_data_match:
+            b64_data = b64_data_match.group(1)
+            img_path = save_base64_media(
+                b64_data,
+                protocol=self.receiver.value,
+                port=self.port,
+                sequence=packet_id_val,
+                event_code=event_code_val
+            )
+            logger.info(f"[MANITOU PHOTO SAVED]: {img_path}")
+            display_msg = raw.replace(
+                f"<PacketData>{b64_data}</PacketData>",
+                f"<PacketData>[PHOTO BASE64, len={len(b64_data)}]</PacketData>"
+            )
+
+        # Label generation
+        is_ping = "<Heartbeat" in raw
+        if is_ping:
+            label = "PING"
+        elif b64_data_match:
+            label = f"PHOTO {event_code_val}"
+        else:
+            label = f"EVENT {event_code_val}"
+
+        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label}] {display_msg}")
+
+        mode = self.protocol_mode.mode
+
+        if mode == EmulationMode.NO_RESPONSE:
             logger.info(f"({self.receiver.value}) NO_RESPONSE mode: skipping reply")
             return
 
-        # parse message (extract sequence, body, timestamp)
-        info = parse_manitou_message(message)
-
-        # ping messages
-        if is_ping(message):
-            if current_mode in (EmulationMode.ACK, EmulationMode.ONLY_PING, EmulationMode.NAK):
-                if current_mode == EmulationMode.NAK:
-                    resp = convert_manitou_nak()
-                else:
-                    resp = convert_manitou_ack()
-                logger.info(
-                    f"({self.receiver.value}) ({client_ip}) --> {resp.decode(errors='ignore').strip()}"
-                )
-                writer.write(resp)
-                await writer.drain()
-            else:
-                logger.info(
-                    f"({self.receiver.value}) ({client_ip}) ping skipped in mode {current_mode.value}"
-                )
+        if mode == EmulationMode.ONLY_PING and not is_ping:
+            logger.info(f"({self.receiver.value}) ONLY_PING mode: skipping non-ping")
             return
 
-        # ONLY_PING: skip non-ping events
-        if current_mode == EmulationMode.ONLY_PING:
-            logger.info(f"({self.receiver.value}) ONLY_PING mode: skipping event")
-            return
-
-        # DROP_N: drop configured number of events, then revert to ACK
-        if current_mode == EmulationMode.DROP_N:
+        if mode == EmulationMode.DROP_N:
             if self.protocol_mode.drop_count > 0:
                 self.protocol_mode.drop_count -= 1
-                logger.info(
-                    f"({self.receiver.value}) dropped event (remaining drops: {self.protocol_mode.drop_count})"
-                )
+                logger.info(f"({self.receiver.value}) Dropped message (remaining: {self.protocol_mode.drop_count})")
                 return
-            self.protocol_mode.set_mode(EmulationMode.ACK)
+            else:
+                self.protocol_mode.set_mode(EmulationMode.ACK)
 
-        # DELAY_N: delay response by configured seconds then continue
-        if current_mode == EmulationMode.DELAY_N:
+        if mode == EmulationMode.DELAY_N:
             delay = self.protocol_mode.delay_seconds
-            logger.info(f"({self.receiver.value}) delaying response by {delay}s")
+            logger.info(f"({self.receiver.value}) Delaying response by {delay}s")
             await asyncio.sleep(delay)
 
-        # final NAK or ACK for events
-        if current_mode == EmulationMode.NAK:
-            resp = convert_manitou_nak()
+        if mode == EmulationMode.NAK:
+            nak = convert_nak(code=self.protocol_mode.nak_result_code or 10)
+            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [NAK {event_code_val}] {nak.strip()}")
+            writer.write(nak)
         else:
-            resp = convert_manitou_ack()
+            ack = convert_ack(packet_id_val if not is_ping else None)
+            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [ACK {event_code_val if not is_ping else 'PING'}] {ack.strip()}")
+            writer.write(ack)
 
-        logger.info(
-            f"({self.receiver.value}) ({client_ip}) --> {resp.decode(errors='ignore').strip()}"
-        )
-        writer.write(resp)
         await writer.drain()
-
-        # consume one packet (decrement counters) in the mode manager
         self.protocol_mode.consume_packet()
