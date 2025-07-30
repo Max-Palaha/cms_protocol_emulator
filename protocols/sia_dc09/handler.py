@@ -25,6 +25,7 @@ class SIADC09Protocol(BaseProtocol):
     def __init__(self):
         super().__init__(receiver=Receiver.SIA_DCS)
         self.protocol_mode = mode_manager.get(self.receiver.value)
+        self._recv_buffer = ""
 
     async def run(self):
         await asyncio.gather(
@@ -159,64 +160,74 @@ class SIADC09Protocol(BaseProtocol):
             return
 
         if isinstance(data, bytes):
-            message = data.decode(errors="ignore")
+            chunk = data.decode(errors="ignore")
         else:
-            message = data
+            chunk = data
 
-        timestamp = self.protocol_mode.get_response_timestamp()
-        parsed = parse_sia_message(message)
-        if not parsed:
-            logger.warning(f"({self.receiver.value}) ({client_ip}) Invalid SIA message: {message.strip()}")
-            return
+        self._recv_buffer += chunk
+        messages = []
 
-        label_in = self.get_sia_label(message)
-        log_message = self.mask_links_for_log(message)
-        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label_in}] {log_message.strip()}")
+        while '\r' in self._recv_buffer:
+            idx = self._recv_buffer.index('\r')
+            msg = self._recv_buffer[:idx]
+            messages.append(msg)
+            self._recv_buffer = self._recv_buffer[idx+1:]
 
-        if is_ping(message):
-            if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:
-                if current_mode == EmulationMode.NAK:
-                    nak = convert_sia_nak(**parsed, timestamp=timestamp)
-                    label_out = self.get_sia_response_label(nak, message)
-                    logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {nak.strip()}")
-                    writer.write(nak.encode() if isinstance(nak, str) else nak)
-                else:
-                    ack = convert_sia_ack(**parsed, timestamp=timestamp)
-                    label_out = self.get_sia_response_label(ack, message)
-                    logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {ack.strip()}")
-                    writer.write(ack.encode() if isinstance(ack, str) else ack)
-                await writer.drain()
-            else:
-                logger.info(f"({self.receiver.value}) ({client_ip}) PING received — skipped due to mode: {current_mode.value}")
-            return
-
-        if current_mode == EmulationMode.ONLY_PING:
-            logger.info(f"({self.receiver.value}) ONLY_PING mode: skipping event")
-            return
-
-        if current_mode == EmulationMode.DROP_N:
-            if self.protocol_mode.drop_count > 0:
-                self.protocol_mode.drop_count -= 1
-                logger.info(f"({self.receiver.value}) Dropped message (remaining: {self.protocol_mode.drop_count})")
+        for message in messages:
+            timestamp = self.protocol_mode.get_response_timestamp()
+            parsed = parse_sia_message(message)
+            if not parsed:
+                logger.warning(f"({self.receiver.value}) ({client_ip}) Invalid SIA message: {message.strip()}")
                 return
+
+            label_in = self.get_sia_label(message)
+            log_message = self.mask_links_for_log(message)
+            logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label_in}] {log_message.strip()}")
+
+            if is_ping(message):
+                if current_mode in [EmulationMode.ONLY_PING, EmulationMode.ACK, EmulationMode.NAK]:
+                    if current_mode == EmulationMode.NAK:
+                        nak = convert_sia_nak(**parsed, timestamp=timestamp)
+                        label_out = self.get_sia_response_label(nak, message)
+                        logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {nak.strip()}")
+                        writer.write(nak.encode() if isinstance(nak, str) else nak)
+                    else:
+                        ack = convert_sia_ack(**parsed, timestamp=timestamp)
+                        label_out = self.get_sia_response_label(ack, message)
+                        logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {ack.strip()}")
+                        writer.write(ack.encode() if isinstance(ack, str) else ack)
+                    await writer.drain()
+                else:
+                    logger.info(f"({self.receiver.value}) ({client_ip}) PING received — skipped due to mode: {current_mode.value}")
+                return
+
+            if current_mode == EmulationMode.ONLY_PING:
+                logger.info(f"({self.receiver.value}) ONLY_PING mode: skipping event")
+                return
+
+            if current_mode == EmulationMode.DROP_N:
+                if self.protocol_mode.drop_count > 0:
+                    self.protocol_mode.drop_count -= 1
+                    logger.info(f"({self.receiver.value}) Dropped message (remaining: {self.protocol_mode.drop_count})")
+                    return
+                else:
+                    self.protocol_mode.set_mode(EmulationMode.ACK)
+
+            if current_mode == EmulationMode.DELAY_N:
+                delay = self.protocol_mode.delay_seconds
+                logger.info(f"({self.receiver.value}) Delaying response by {delay}s")
+                await asyncio.sleep(delay)
+
+            if current_mode == EmulationMode.NAK:
+                nak = convert_sia_nak(**parsed, timestamp=timestamp)
+                label_out = self.get_sia_response_label(nak, message)
+                logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {nak.strip()}")
+                writer.write(nak.encode() if isinstance(nak, str) else nak)
             else:
-                self.protocol_mode.set_mode(EmulationMode.ACK)
+                ack = convert_sia_ack(**parsed, timestamp=timestamp)
+                label_out = self.get_sia_response_label(ack, message)
+                logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {ack.strip()}")
+                writer.write(ack.encode() if isinstance(ack, str) else ack)
 
-        if current_mode == EmulationMode.DELAY_N:
-            delay = self.protocol_mode.delay_seconds
-            logger.info(f"({self.receiver.value}) Delaying response by {delay}s")
-            await asyncio.sleep(delay)
-
-        if current_mode == EmulationMode.NAK:
-            nak = convert_sia_nak(**parsed, timestamp=timestamp)
-            label_out = self.get_sia_response_label(nak, message)
-            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {nak.strip()}")
-            writer.write(nak.encode() if isinstance(nak, str) else nak)
-        else:
-            ack = convert_sia_ack(**parsed, timestamp=timestamp)
-            label_out = self.get_sia_response_label(ack, message)
-            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [{label_out}] {ack.strip()}")
-            writer.write(ack.encode() if isinstance(ack, str) else ack)
-
-        await writer.drain()
-        self.protocol_mode.consume_packet()
+            await writer.drain()
+            self.protocol_mode.consume_packet()
