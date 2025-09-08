@@ -1,34 +1,27 @@
+import os
 import random
 import string
-from typing import Optional
-from utils.logger import logger
+from typing import Optional, Tuple
 
-def generate_random_str12() -> str:
-    """Generate a random 12-character alphanumeric string."""
-    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(12))
 
-def convert_ack(packet_id: Optional[str] = None) -> bytes:
-    """
-    Build a standard ACK response for Manitou.
-    If packet_id is provided, include RawNo tag. Otherwise, return <Ack/> only.
-    Format: [STX]<?xml version="1.0"?><Ack>[<RawNo>packet_id</RawNo>]</Ack>[ETX]
-    """
-    if packet_id:
-        payload = f'<?xml version="1.0"?><Ack><RawNo>{generate_random_str12()}</RawNo></Ack>'
-    else:
-        payload = '<?xml version="1.0"?><Ack/>'
-    message = f'{chr(0x02)}{payload}{chr(0x03)}'
-    logger.debug(f"(MANITOU) → ACK payload: {payload}")
-    return message.encode()
+STX = b"\x02"
+ETX = b"\x03"
 
-def convert_nak(code: int = 10, index: Optional[str] = None) -> bytes:
+
+def _random_rawno(n: int = 12) -> str:
+    """Generate a RawNo compatible token (alnum), e.g. 'ER9ReRiXVWRl'."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(random.choice(alphabet) for _ in range(n))
+
+
+def convert_ack(rawno: Optional[str] = None, return_rawno: bool = False) -> "bytes|Tuple[bytes,str]":
     """
-    Build a NAK response for Manitou.
-    Format: [STX]<?xml version="1.0"?><Nak Index="{index}" Code="{code}"/>[ETX]
-    If index is not provided, generate a random string.
+    Build Manitou ACK frame:
+      STX + <?xml version="1.0"?><Ack><RawNo>...</RawNo></Ack> + ETX
+
+    If return_rawno=True, returns (bytes, rawno) so handler can map Binary.RawNo to the originating Signal.
     """
-    index_val = index or generate_random_str12()
-    payload = f'<?xml version="1.0"?><Nak Index="{index_val}" Code="{code}"/>'
-    message = f'{chr(0x02)}{payload}{chr(0x03)}'
-    logger.debug(f"(MANITOU) → NAK payload: {payload}")
-    return message.encode()
+    token = rawno or _random_rawno()
+    xml = f'<?xml version="1.0"?><Ack><RawNo>{token}</RawNo></Ack>'
+    frame = STX + xml.encode("utf-8") + ETX
+    return (frame, token) if return_rawno else frame
