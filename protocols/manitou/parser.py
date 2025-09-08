@@ -125,3 +125,9 @@ def _extract_attr(attrs: str, name: str) -> Optional[str]:
 def _extract_inner(blob: str, tag: str) -> Optional[str]:
     m = re.search(rf"<{tag}>(.*?)</{tag}>", blob, flags=re.DOTALL | re.IGNORECASE)
     return m.group(1).strip() if m else None
+
+def extract_heartbeat_passkey(message: Union[str, bytes]) -> Optional[str]:
+    """Return Passkey from <Heartbeat Passkey="..."/> if present."""
+    s = strip_stx_etx(message)
+    m = re.search(r'<Heartbeat\b[^>]*\bPasskey="([^"]+)"', s, flags=re.IGNORECASE)
+    return m.group(1) if m else None

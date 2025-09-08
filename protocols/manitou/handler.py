@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from typing import Dict, Any
+from typing import Dict
 
 from core.connection_handler import BaseProtocol
 from utils.constants import Receiver
@@ -17,8 +17,9 @@ from .parser import (
     parse_manitou_message,
     is_binary_payload,
     is_ping,
+    extract_heartbeat_passkey,
 )
-from .responses import convert_ack
+from .responses import convert_ack, convert_nak
 from .mode_switcher import ManitouModeSwitcher
 
 
@@ -70,22 +71,15 @@ class ManitouProtocol(BaseProtocol):
         xml_text = strip_stx_etx(frame)
         safe_text = sanitize_for_log(frame)
 
-        # Decide logging style: compact only for binary; full raw XML for everything else
+        # logging: фото — компакт, інше — повний XML
         is_bin = is_binary_payload(xml_text)
         label, meta = self._label_incoming(xml_text)
-
         if is_bin:
-            # Compact one-liner on INFO; RAW redacted XML in DEBUG
-            if meta:
-                logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label}] {meta}")
-            else:
-                logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label}]")
+            logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label}] {meta}")
             logger.debug(f"RAW XML: {safe_text}")
         else:
-            # Full raw (redacted) XML on INFO for non-binary
             logger.info(f"({self.receiver.value}) ({client_ip}) <<-- [{label}] {safe_text}")
 
-        # Modes
         mode = self.protocol_mode.mode
         if mode == EmulationMode.NO_RESPONSE:
             return
@@ -108,57 +102,80 @@ class ManitouProtocol(BaseProtocol):
         if mode == EmulationMode.DELAY_N:
             await asyncio.sleep(self.protocol_mode.delay_seconds)
 
-        # Parse once (safe for use below)
         msg = parse_manitou_message(frame)
 
-        # Signal -> ACK (remember RawNo -> event_code)
+        # --- SIGNAL ---
         if msg.get("type") == "signal":
+            event_code = msg.get("event_code")
             if mode == EmulationMode.NAK:
-                logger.info(f"({self.receiver.value}) ({client_ip}) NAK mode: skip ACK for event {msg.get('event_code')}")
+                # Explicit Nak with Index+Code, then drop connection
+                nak_code = getattr(self.protocol_mode, "nak_result_code", 10)
+                nak, idx = convert_nak(code=nak_code, return_index=True)
+                writer.write(nak)
+                logger.info(f"({self.receiver.value}) ({client_ip}) -->> [NAK {event_code}] Index={idx} Code={nak_code} {nak!r}")
+                await writer.drain()
+                self.protocol_mode.consume_packet()
+                # hard close to satisfy test "Connection dropped"
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                finally:
+                    logger.info(f"({self.receiver.value}) Connection closed by emulator (NAK policy).")
                 return
 
+            # Normal ACK branch (remember RawNo for mapping photos)
             ack, rawno = convert_ack(return_rawno=True)
-            event_code = msg.get("event_code")
-            if event_code:
+            if event_code and rawno:
                 self._rawno_eventcode[rawno] = event_code
-
             writer.write(ack)
             logger.info(f"({self.receiver.value}) ({client_ip}) -->> [ACK {event_code or 'EVENT'}] {ack!r}")
             await writer.drain()
             self.protocol_mode.consume_packet()
             return
 
-        # Binary -> save EACH frame separately (no concatenation)
+        # --- BINARY ---
         if msg.get("type") == "binary":
-            if mode != EmulationMode.NAK:
-                # Extract base64 from original (unredacted) XML
-                m = re.search(r"<Data\b[^>]*>(.*?)</Data>", xml_text, flags=re.DOTALL | re.IGNORECASE)
-                if m:
-                    b64 = "".join(m.group(1).split())
-                    rawno = msg.get("rawno") or "-"
-                    frame_no = msg.get("frame_no") or "0"
-                    event_code = self._rawno_eventcode.get(rawno)
-
-                    try:
-                        path = save_base64_media(
-                            b64,
-                            protocol=self.receiver.value,
-                            port=self.port,
-                            sequence=frame_no,           # separate file per frame
-                            event_code=event_code,
-                        )
-                        logger.info(f"[MANITOU PHOTO SAVED] RawNo={rawno} Frame={frame_no} Path={path}")
-                    except Exception as e:
-                        logger.error(f"[MANITOU PHOTO SAVE ERROR] RawNo={rawno} Frame={frame_no} err={e}")
-
-                ack = convert_ack()
-                writer.write(ack)
-                logger.info(f"({self.receiver.value}) ({client_ip}) -->> [ACK BINARY] {ack!r}")
+            if mode == EmulationMode.NAK:
+                nak_code = getattr(self.protocol_mode, "nak_result_code", 10)
+                nak, idx = convert_nak(code=nak_code, return_index=True)
+                writer.write(nak)
+                logger.info(f"({self.receiver.value}) ({client_ip}) -->> [NAK BINARY] Index={idx} Code={nak_code} {nak!r}")
                 await writer.drain()
                 self.protocol_mode.consume_packet()
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                finally:
+                    logger.info(f"({self.receiver.value}) Connection closed by emulator (NAK policy).")
+                return
+
+            # Normal: save each frame and ACK
+            m = re.search(r"<Data\b[^>]*>(.*?)</Data>", xml_text, flags=re.DOTALL | re.IGNORECASE)
+            if m:
+                b64 = "".join(m.group(1).split())
+                rawno = msg.get("rawno") or "-"
+                frame_no = msg.get("frame_no") or "0"
+                event_code = self._rawno_eventcode.get(rawno)
+                try:
+                    path = save_base64_media(
+                        b64,
+                        protocol=self.receiver.value,
+                        port=self.port,
+                        sequence=frame_no,
+                        event_code=event_code,
+                    )
+                    logger.info(f"[MANITOU PHOTO SAVED] RawNo={rawno} Frame={frame_no} Path={path}")
+                except Exception as e:
+                    logger.error(f"[MANITOU PHOTO SAVE ERROR] RawNo={rawno} Frame={frame_no} err={e}")
+
+            ack = convert_ack()
+            writer.write(ack)
+            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [ACK BINARY] {ack!r}")
+            await writer.drain()
+            self.protocol_mode.consume_packet()
             return
 
-        # Unknown -> generic ACK
+        # --- UNKNOWN ---
         if mode != EmulationMode.NAK:
             ack = convert_ack()
             writer.write(ack)
@@ -167,28 +184,21 @@ class ManitouProtocol(BaseProtocol):
             self.protocol_mode.consume_packet()
 
     async def _reply_ping(self, writer, client_ip: str):
-        """Reply to heartbeat/ping according to mode."""
-        mode = self.protocol_mode.mode
-        if mode in [EmulationMode.ACK, EmulationMode.ONLY_PING, EmulationMode.DELAY_N, EmulationMode.DROP_N]:
-            ack = convert_ack()
-            writer.write(ack)
-            logger.info(f"({self.receiver.value}) ({client_ip}) -->> [ACK PING] {ack!r}")
-            await writer.drain()
-        elif mode == EmulationMode.NAK:
-            logger.info(f"({self.receiver.value}) ({client_ip}) PING received — NAK mode (skip ACK)")
-
-    # ---------- helpers ----------
+        """Always ACK heartbeat/ping except in NO_RESPONSE mode. Log Passkey if present."""
+        if self.protocol_mode.mode == EmulationMode.NO_RESPONSE:
+            return
+        ack = convert_ack()
+        writer.write(ack)
+        logger.info(f"({self.receiver.value}) ({client_ip}) -->> [ACK PING] {ack!r}")
+        await writer.drain()
 
     def _label_incoming(self, xml: str) -> tuple[str, str]:
-        """
-        Produce a compact label and short meta for INFO (used only for binary).
-        For non-binary we still include full XML; label is kept for quick scanning.
-        """
-        # Ping?
+        # PING(+Passkey)
         if is_ping(xml):
-            return "PING", ""
+            pk = extract_heartbeat_passkey(xml)
+            return ("PING AUTH" if pk else "PING", f"Passkey={pk}" if pk else "")
 
-        # Binary
+        # Binary / Signal / Fallback як у твоїй версії ...
         m_bin = re.search(r"<Binary\b([^>]*)>", xml, flags=re.IGNORECASE)
         if m_bin:
             attrs = m_bin.group(1)
@@ -198,10 +208,9 @@ class ManitouProtocol(BaseProtocol):
             length = _attr(attrs, "Length") or "-"
             return "PHOTO " + ext, f"RawNo={rawno} Frame={frame_no} Len={length}"
 
-        # Signal
         m_sig = re.search(r"<Signal\b([^>]*)>(.*?)</Signal>", xml, flags=re.DOTALL | re.IGNORECASE)
         if m_sig:
-            attrs, _inner = m_sig.group(1), m_sig.group(2)
+            attrs, _ = m_sig.group(1), m_sig.group(2)
             code = _attr(attrs, "Event") or "UNKNOWN"
             return f"EVENT {code}", ""
 
