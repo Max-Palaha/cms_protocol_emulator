@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, Dict
 
-from utils.tools import logger
+from utils.logger import logger
 
 
 class EmulationMode(Enum):

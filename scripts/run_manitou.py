@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import asyncio
 from utils.registry_tools import get_protocol_handler
 from utils.constants import Receiver
-from utils.tools import logger
+from utils.logger import logger
 
 import protocols.manitou.handler
 

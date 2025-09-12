@@ -1,18 +1,22 @@
 import asyncio
-from abc import ABC, abstractmethod
 from utils.tools import logger
 from utils.config_loader import get_port_by_key
 
-
-class BaseProtocol(ABC):
+class BaseProtocol:
     def __init__(self, receiver):
         self.receiver = receiver
         self.port = get_port_by_key(receiver)
 
-    async def run(self):
-        logger.info(f"({self.receiver}) Starting server on port {self.port}")
-        await start_server(self)
+    async def handle(self, reader, writer, client_ip, client_port, data: bytes):
+        """
+        Default handler: just log incoming raw data.
+        Child classes should override for custom parsing/masking/logging.
+        """
+        logger.info(f"({self.receiver.value}) ({client_ip}) <<-- {data.decode(errors='replace').strip()}")
 
+    async def run(self):
+        logger.info(f"({self.receiver.value}) Starting server on port {self.port}")
+        await start_server(self)
 
 async def start_server(protocol: BaseProtocol):
     server = await asyncio.start_server(
@@ -20,17 +24,16 @@ async def start_server(protocol: BaseProtocol):
         host="0.0.0.0",
         port=protocol.port,
     )
-
     addr = server.sockets[0].getsockname()
-    logger.info(f"({protocol.receiver}) Serving on {addr}")
+    logger.info(f"({protocol.receiver.value}) Serving on {addr}")
     async with server:
         await server.serve_forever()
 
-
-async def _handle_connection(protocol: BaseProtocol, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+async def _handle_connection(protocol: BaseProtocol, reader, writer):
     peername = writer.get_extra_info("peername")
     client_ip, client_port = peername[0], peername[1]
-    logger.debug(f"({protocol.receiver}) ({client_ip}:{client_port}) connection opened")
+    protocol_name = protocol.receiver.value.split(".")[-1]
+    logger.debug(f"({protocol_name}) ({client_ip}:{client_port}) connection opened")
 
     try:
         while not reader.at_eof():
@@ -38,14 +41,10 @@ async def _handle_connection(protocol: BaseProtocol, reader: asyncio.StreamReade
             if not data:
                 break
 
-            message = data.decode(errors="ignore").strip()
-            if message:
-                logger.info(f"({protocol.receiver}) ({client_ip}) <<-- {message}")
-                await protocol.handle(reader, writer, client_ip, client_port, message)
-
+            await protocol.handle(reader, writer, client_ip, client_port, data)
     except Exception as e:
-        logger.error(f"({protocol.receiver}) Error while handling connection from {client_ip}:{client_port}: {e}")
+        logger.error(f"({protocol_name}) Error while handling connection from {client_ip}:{client_port}: {e}")
     finally:
-        logger.info(f"({protocol.receiver}) Connection closed by {client_ip}:{client_port}")
+        logger.info(f"({protocol_name}) Connection closed by {client_ip}:{client_port}")
         writer.close()
         await writer.wait_closed()

@@ -9,6 +9,8 @@ class Receiver(str, Enum):
     MASXML = "MASXML"
     SBN = "SBN"
     MANITOU = "MANITOU"
+    MICROKEY = "MICROKEY"
+    SENTINEL = "SENTINEL"
     SIA_DCS = "SIA_DCS"
 
 

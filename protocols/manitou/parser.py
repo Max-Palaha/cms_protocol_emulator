@@ -1,36 +1,133 @@
 import re
-from typing import Union, Dict
-from utils.tools import logger
+from typing import Dict, Optional, Union
 
-# compile regex to capture header length and body
-MANITOU_HEADER_PATTERN = re.compile(
-    r'^(?P<crc>[A-Fa-f0-9]{4})'         # CRC (4 hex chars)
-    r'(?P<length>\d{4})"'             # Length (4 digits) + double-quote
-    r'(?P<body>.+?)'                    # Body content (non-greedy)
-    r'"_(?P<timestamp>.+)$'            # Timestamp after underscore
-)
+STX = "\x02"
+ETX = "\x03"
 
-def parse_manitou_message(message: Union[str, bytes]) -> Dict[str, str]:
+
+def strip_stx_etx(data: Union[str, bytes]) -> str:
+    """Remove leading STX and trailing ETX; return pure XML string."""
+    if isinstance(data, bytes):
+        data = data.decode(errors="ignore")
+    s = data.strip()
+    if s and s[0] == STX:
+        s = s[1:]
+    if s and s[-1] == ETX:
+        s = s[:-1]
+    return s
+
+
+def sanitize_for_log(data: Union[str, bytes]) -> str:
     """
-    Parse Manitou framing: extract sequence, body, and timestamp.
-    Returns a dict with keys: sequence, body, timestamp.
+    Redact <Data>...</Data> body from Binary packets for safe logging.
+    Keeps attributes (Ext, Length, RawNo, FrameNo, Data Length), replaces body with marker.
     """
-    msg = message.decode('utf-8', errors='ignore') if isinstance(message, (bytes, bytearray)) else message
-    result = {"sequence": "0000", "body": msg, "timestamp": ""}
-    try:
-        match = MANITOU_HEADER_PATTERN.search(msg)
-        if match:
-            result['sequence'] = match.group('length')
-            result['body'] = match.group('body')
-            result['timestamp'] = match.group('timestamp')
-        else:
-            logger.trace(f"(MANITOU) Header regex did not match message: {msg}")
-    except Exception as e:
-        logger.error(f"(MANITOU) Failed to parse Manitou message: {e}")
-    return result
+    s = strip_stx_etx(data)
+
+    def _repl(m: re.Match) -> str:
+        open_tag = m.group(1)
+        length_attr = re.search(r'Length="(\d+)"', open_tag, flags=re.IGNORECASE)
+        length_val = length_attr.group(1) if length_attr else "?"
+        return f"{open_tag}[BINARY REDACTED len={length_val}]</Data>"
+
+    s = re.sub(r"(<Data\b[^>]*>)(.*?)(</Data>)", _repl, s, flags=re.DOTALL | re.IGNORECASE)
+    return s
+
+
+def is_binary_payload(message: Union[str, bytes]) -> bool:
+    s = strip_stx_etx(message)
+    return "<Binary" in s
 
 
 def is_ping(message: Union[str, bytes]) -> bool:
-    """Detect ping by looking for NULL payload."""
-    msg = message.decode('utf-8', errors='ignore') if isinstance(message, (bytes, bytearray)) else message
-    return '"NULL"' in msg
+    """
+    Heartbeat / Ping detection (case-insensitive).
+    Typical frames:
+      <Heartbeat/>   OR   <Ping/>   OR   <MessageType>HEARTBEAT</MessageType>
+    """
+    s = strip_stx_etx(message)
+    if re.search(r"<\s*(heartbeat|ping)\b", s, flags=re.IGNORECASE):
+        return True
+    if re.search(r"<\s*MessageType\s*>\s*HEARTBEAT\s*</\s*MessageType\s*>", s, flags=re.IGNORECASE):
+        return True
+    return False
+
+
+def parse_manitou_message(data: Union[str, bytes]) -> Dict[str, Optional[str]]:
+    """
+    Parse a Manitou XML frame (without STX/ETX) into a typed dict.
+
+    Returns keys:
+      type: "signal" | "binary" | "unknown"
+      raw_text: sanitized xml string (safe for logs)
+      # signal:
+      event_code, evtype, area, area_info, zone, point_id, url
+      # binary:
+      rawno, ext, frame_no (str), length (str), data_len (str)
+    """
+    xml = strip_stx_etx(data)
+
+    # Binary
+    if "<Binary" in xml:
+        bin_open = re.search(r"<Binary\b([^>]*)>", xml, flags=re.IGNORECASE)
+        attrs = bin_open.group(1) if bin_open else ""
+        ext = _extract_attr(attrs, "Ext")
+        rawno = _extract_attr(attrs, "RawNo")
+        frame_no = _extract_attr(attrs, "FrameNo") or _extract_attr(attrs, "Frame")
+        length = _extract_attr(attrs, "Length")
+
+        data_open = re.search(r"<Data\b([^>]*)>", xml, flags=re.IGNORECASE)
+        data_len = _extract_attr(data_open.group(1), "Length") if data_open else None
+
+        return {
+            "type": "binary",
+            "raw_text": sanitize_for_log(xml),
+            "ext": ext,
+            "rawno": rawno,
+            "frame_no": frame_no,
+            "length": length,
+            "data_len": data_len,
+        }
+
+    # Signal
+    sig = re.search(r"<Signal\b([^>]*)>(.*?)</Signal>", xml, flags=re.IGNORECASE | re.DOTALL)
+    if sig:
+        sig_attrs = sig.group(1)
+        inner = sig.group(2)
+        evtype = _extract_attr(sig_attrs, "EvType")
+        event = _extract_attr(sig_attrs, "Event")  # ← attribute, not inner tag
+        area = _extract_inner(inner, "Area")
+        area_info = _extract_inner(inner, "AreaInfo")
+        zone = _extract_inner(inner, "Zone")
+        point_id = _extract_inner(inner, "PointID")
+        url = _extract_inner(inner, "URL")
+
+        return {
+            "type": "signal",
+            "raw_text": sanitize_for_log(xml),
+            "evtype": evtype,
+            "event_code": event,
+            "area": area,
+            "area_info": area_info,
+            "zone": zone,
+            "point_id": point_id,
+            "url": url,
+        }
+
+    return {"type": "unknown", "raw_text": sanitize_for_log(xml)}
+
+
+def _extract_attr(attrs: str, name: str) -> Optional[str]:
+    m = re.search(rf'\b{name}="([^"]+)"', attrs, flags=re.IGNORECASE)
+    return m.group(1) if m else None
+
+
+def _extract_inner(blob: str, tag: str) -> Optional[str]:
+    m = re.search(rf"<{tag}>(.*?)</{tag}>", blob, flags=re.DOTALL | re.IGNORECASE)
+    return m.group(1).strip() if m else None
+
+def extract_heartbeat_passkey(message: Union[str, bytes]) -> Optional[str]:
+    """Return Passkey from <Heartbeat Passkey="..."/> if present."""
+    s = strip_stx_etx(message)
+    m = re.search(r'<Heartbeat\b[^>]*\bPasskey="([^"]+)"', s, flags=re.IGNORECASE)
+    return m.group(1) if m else None

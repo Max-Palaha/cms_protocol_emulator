@@ -22,6 +22,7 @@ logs/
 *.log
 *.cfg
 nohup.out
+log_media/
 
 # Compiled Qt files
 *.qmlc
